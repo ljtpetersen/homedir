@@ -64,6 +64,8 @@ assert_eq!(
 assert!(get_home("NonExistentUser").unwrap().is_none());
 ```
 
+The full documentation of the crate is available on the [docs.rs](https://docs.rs/homedir) page.
+
 ## Licensing
 Licensed under either of
 
