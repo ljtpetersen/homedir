@@ -26,8 +26,8 @@ pub type GetHomeError = nix::errno::Errno;
 /// // This assumes there is a user named `root` which has
 /// // `/root` as a home directory.
 /// assert_eq!(
-///     "/root".as_ref(),
-///     get_home("root").unwrap().unwrap().as_path()
+///     std::path::Path::new("/root"),
+///     get_home("root").unwrap().unwrap()
 /// );
 /// assert!(get_home("nonexistentuser").unwrap().is_none());
 /// ```
@@ -53,7 +53,7 @@ pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeEr
 ///
 /// // This assumes that the process' user has "/home/jpetersen" as home directory.
 /// assert_eq!(
-///     "/home/jpetersen".as_ref(),
+///     std::path::Path::new("/home/jpetersen"),
 ///     get_my_home().unwrap().unwrap().as_path()
 /// );
 ///

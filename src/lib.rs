@@ -33,7 +33,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! homedir = { version = '0.1.0", features = ["fast_fail"] }
+//! homedir = { version = '0.1.0", features = ["check_env"] }
 //! ```
 //!
 //! This feature is only useful on Unix systems; it has no effect on Windows.
@@ -45,7 +45,7 @@
 //!
 //! // This assumes that the process' user has "/home/jpetersen" as home directory.
 //! assert_eq!(
-//!     "/home/jpetersen".as_ref(),
+//!     std::path::Path::new("/home/jpetersen"),
 //!     get_my_home().unwrap().unwrap().as_path()
 //! );
 //! ```
@@ -57,7 +57,7 @@
 //! // This assumes there is a user named `Administrator` which has
 //! // `C:\Users\Administrator` as a home directory.
 //! assert_eq!(
-//!     "C:\\Users\\Administrator".as_ref(),
+//!     std::path::Path::new("C:\\Users\\Administrator"),
 //!     get_home("Administrator").unwrap().unwrap().as_path()
 //! );
 //! assert!(get_home("NonExistentUser").unwrap().is_none());
