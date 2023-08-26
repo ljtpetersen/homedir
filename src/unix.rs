@@ -27,7 +27,7 @@ pub type GetHomeError = nix::errno::Errno;
 /// // `/root` as a home directory.
 /// assert_eq!(
 ///     std::path::Path::new("/root"),
-///     get_home("root").unwrap().unwrap()
+///     get_home("root").unwrap().unwrap().as_path()
 /// );
 /// assert!(get_home("nonexistentuser").unwrap().is_none());
 /// ```
