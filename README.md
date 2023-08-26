@@ -34,7 +34,7 @@ this feature, replace the above lines in the `Cargo.toml` with
 
 ```toml
 [dependencies]
-homedir = { version = "0.1.0", features = ["fast_fail"] }
+homedir = { version = "0.1.0", features = ["check_env"] }
 ```
 
 This feature is only useful on Unix systems; it has no effect on Windows.
