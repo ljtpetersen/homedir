@@ -54,14 +54,14 @@ pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeEr
 ///
 /// # Example
 /// ```no_run
-/// use homedir::get_home_from_id;
+/// use homedir::unix::{get_home_from_id, UserIdentifier};
 ///
 /// // This only works on Unix systems, and assumes that the root user's home
 /// // directory is located at /root.
 /// assert_eq!(
 ///     std::path::Path::new("/root"),
 ///     // See nix::unistd::Uid::from_raw
-///     get_home_from_id(UserIdentifier::from_raw(0)).unwrap().unwrap().as_path(),
+///     get_home_from_id(&UserIdentifier::from_raw(0)).unwrap().unwrap().as_path(),
 /// );
 /// ```
 pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
@@ -109,7 +109,7 @@ pub fn get_my_id() -> Result<UserIdentifier, GetHomeError> {
 ///
 /// // This assumes that the HOME environment variable is set to "/home/jpetersen".
 /// assert_eq!(
-///     "/home/jpetersen".as_ref(),
+///     std::path::Path::new("/home/jpetersen"),
 ///     get_my_home().unwrap().unwrap().as_path()
 /// );
 /// ```

@@ -17,7 +17,7 @@ or adding the following to the dependencies in your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-homedir = "0.2.0"
+homedir = "0.2.1"
 ```
 
 ## Examples

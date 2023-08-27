@@ -114,13 +114,13 @@ pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeEr
 ///
 /// # Example
 /// ```no_run
-/// use homedir::get_home_from_id;
+/// use homedir::windows::{get_my_id, get_home_from_id};
 ///
 /// // This assumes that the current user's profile path is
 /// // "C:\Users\jpetersen".
 /// assert_eq!(
 ///     std::path::Path::new("C:\\Users\\jpetersen"),
-///     get_home_from_id(get_my_id().unwrap()).unwrap().unwrap(),
+///     get_home_from_id(&get_my_id().unwrap()).unwrap().unwrap(),
 /// );
 /// ```
 pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
