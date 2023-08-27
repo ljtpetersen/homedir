@@ -6,24 +6,28 @@
 use std::alloc::alloc;
 use std::alloc::dealloc;
 use std::alloc::Layout;
+use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::c_void;
 use std::fmt;
+use std::mem::MaybeUninit;
 use std::path::PathBuf;
 use std::ptr::null;
 use std::ptr::null_mut;
 
 use widestring::error::ContainsNul;
-use widestring::u16cstr;
-use widestring::u16str;
 use widestring::U16CStr;
 use widestring::U16CString;
 
+use serde::Deserialize;
+
+use windows_sys::core::HRESULT;
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
 use windows_sys::Win32::Foundation::ERROR_NONE_MAPPED;
-use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use windows_sys::Win32::Foundation::E_INVALIDARG;
+use windows_sys::Win32::Foundation::S_OK;
 use windows_sys::Win32::Foundation::WIN32_ERROR;
 use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
 use windows_sys::Win32::Security::GetTokenInformation;
@@ -32,12 +36,21 @@ use windows_sys::Win32::Security::TokenUser;
 use windows_sys::Win32::Security::SID_NAME_USE;
 use windows_sys::Win32::Security::TOKEN_QUERY;
 use windows_sys::Win32::Security::TOKEN_USER;
+use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Memory::LocalFree;
-use windows_sys::Win32::System::Registry::RegGetValueW;
-use windows_sys::Win32::System::Registry::HKEY_LOCAL_MACHINE;
-use windows_sys::Win32::System::Registry::RRF_RT_REG_SZ;
 use windows_sys::Win32::System::Threading::GetCurrentProcess;
 use windows_sys::Win32::System::Threading::OpenProcessToken;
+use windows_sys::Win32::UI::Shell::FOLDERID_Profile;
+use windows_sys::Win32::UI::Shell::SHGetKnownFolderPath;
+
+use wmi::COMLibrary;
+use wmi::WMIConnection;
+use wmi::WMIError;
+
+/// An identifier for a user.
+///
+/// This is the text representation of a user's SID.
+pub type UserIdentifier = String;
 
 /// The error type returned by [`get_home`] upon failure.
 #[derive(Debug)]
@@ -50,99 +63,168 @@ pub enum GetHomeError {
     /// This variant occurs when the user passes a string reference which contains a null character `'\0'` to the
     /// [`get_home`] function.
     NulError(ContainsNul<u16>),
+    /// Represents an HRESULT returned by the Windows API.
+    HResult(HRESULT),
+    /// Represents an error returned by the wmi crate.
+    WMIError(WMIError),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename = "Win32_UserProfile")]
+#[serde(rename_all = "PascalCase")]
+struct UserProfile {
+    local_path: String,
 }
 
 /// Get a user's home directory path.
 ///
-/// If some error occurs when obtaining the path, `Err` is returned. If `username`
-/// contains a null character (`'\0'`), an error is guaranteed to be returned.
-/// If no user associated with `username` could be found, `Ok(None)` is returned.
-/// Otherwise, the path of the user's home directory is returned.
+/// If some error occurs when obtaining the path, `Err` is returned. If no user
+/// associated with `username` could be found, `Ok(None)` is returned. Otherwise,
+/// the path to the user's home directory is returned.
+///
+/// This function first gets the user's id from [`get_id`](get_id).
+/// Then, it passes this SID to [`get_home_from_id`](get_home_from_id).
 ///
 /// # Example
 /// ```no_run
 /// use homedir::get_home;
 ///
-/// // This assumes there is a user named `Administrator` which has
-/// // `C:\Users\Administrator` as a home directory.
+/// // This assumes there is a user on the local machine named "Administrator"
+/// // whose profile path is "C:\Users\Administrator".
 /// assert_eq!(
-///     "C:\\Users\\Administrator".as_ref(),
-///     get_home("Administrator").unwrap().unwrap().as_path()
+///     std::path::Path::new("C:\\Users\\Administrator"),
+///     get_home("Administrator").unwrap().unwrap().as_path(),
 /// );
-/// assert!(get_home("NonExistentUser").unwrap().is_none());
-/// assert!(get_home("User\0Name").is_err());
 /// ```
-///
-/// This function obtains the home directory path in the following manner. First,
-/// obtain the [SID](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers)
-/// associated with the username using the
-/// [`LookupAccountNameW`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountnamew) function.
-/// Then, convert this SID to a string, and read the registry key
-/// `\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\<SID Here>\ProfileImagePath`. This should
-/// be the home directory path.
 pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError> {
+    let Some(s) = get_id(username.as_ref())? else {
+        return Ok(None);
+    };
+    get_home_from_id(&s)
+}
+
+/// Get a user's home directory path from their ID.
+///
+/// The passed SID is used in a WMI query to get the
+/// [`Win32_UserProfile`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ee886409(v=vs.85))
+/// class' LocalPath field. Note that WMI queries require
+/// [`CoInitializeEx`](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex)
+/// to be called first. This function uses the `COINIT_MULTITHREADED` flag when calling this function, which
+/// could cause an issue if the initialization function is called with a different flag.
+///
+/// # Example
+/// ```no_run
+/// use homedir::get_home_from_id;
+///
+/// // This assumes that the current user's profile path is
+/// // "C:\Users\jpetersen".
+/// assert_eq!(
+///     std::path::Path::new("C:\\Users\\jpetersen"),
+///     get_home_from_id(get_my_id().unwrap()).unwrap().unwrap(),
+/// );
+/// ```
+pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
+    thread_local! {
+        static COM_LIB: COMLibrary = COMLibrary::new().unwrap();
+    }
+    let con = WMIConnection::new(COM_LIB.with(|f| *f))?;
+    let mut filters = HashMap::with_capacity(1);
+    filters.insert("SID".to_owned(), wmi::FilterValue::String(id.clone()));
+    let v = con.filtered_query::<UserProfile>(&filters)?;
+    let Some(p) = v.into_iter().next() else {
+        return Ok(None);
+    };
+    Ok(Some(p.local_path.into()))
+}
+
+/// Get a user's id from their uesrname.
+///
+/// This function uses
+/// [`LookupAccountNameW`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountnamew)
+/// to get a user's SID, before converting it to a string using
+/// [`ConvertSidToStringSidW`](https://learn.microsoft.com/en-us/windows/win32/api/sddl/nf-sddl-convertsidtostringsidw).
+pub fn get_id<S: AsRef<str>>(username: S) -> Result<Option<UserIdentifier>, GetHomeError> {
     unsafe {
-        // get the SID and the memory layout to later deallocate it.
-        let Some((buf, lay)) = get_user_sid(username.as_ref())? else {
-            // if the user could not be associated with an SID, return none.
+        let Some((sid, lay)) = get_user_sid(username.as_ref())? else {
             return Ok(None);
         };
-        // Get the home directory associated with the sid from the registry.
-        let ret = get_sid_home(buf);
-        // deallocate the sid buf.
-        dealloc(buf.cast(), lay);
-        // return.
-        Ok(Some(ret?))
+        let ret = sid_to_string(sid);
+        dealloc(sid.cast(), lay);
+        ret.map(Option::Some)
     }
 }
 
-/// Get this process' user's home directory.
+/// Get the home directory of the process' user.
 ///
-/// If some error occurs when obtaining the path, `Err` is returned.
-/// On Windows, this function will never return `Ok(None)`.
+/// This function uses the
+/// [`SHGetKnownFolderPath`](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetknownfolderpath)
+/// function to get the profile directory path of the current user.
 ///
 /// # Example
 /// ```no_run
 /// use homedir::get_my_home;
 ///
-/// // This assumes that the process' user has "/home/jpetersen" as home directory.
+/// // This assumes that the current process' user's profile directory path is
+/// // "C:\Users\jpetersen".
 /// assert_eq!(
-///     "C:\\Users\\m".as_ref(),
-///     get_my_home().unwrap().unwrap().as_path()
+///     std::path::Path::new("C:\\Users\\jpetersen"),
+///     get_my_home().unwrap().unwrap(),
 /// );
 /// ```
-///
-/// This function operates in a very similar manner to [`get_home`]. However,
-/// instead of getting the user's SID through [`LookupAccountNameW`],
-/// it obtains it using
-/// [`GetTokenInformation`](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation).
 pub fn get_my_home() -> Result<Option<PathBuf>, GetHomeError> {
-    Ok(unsafe {
-        // get the SID and the memory layout to later deallocate it.
-        // buf is a pointer to a TOKEN_USER structure.
-        let (buf, lay) = get_my_sid()?;
-        // get the home directory associated with the sid from the registry.
-        let tmp = get_sid_home((*buf.cast::<TOKEN_USER>()).User.Sid.cast())?;
-        // deallocate the structore
-        dealloc(buf.cast(), lay);
-        // return.
-        Some(tmp)
-    })
+    unsafe {
+        let mut out = MaybeUninit::uninit();
+        let hres = SHGetKnownFolderPath(&FOLDERID_Profile, 0, 0, out.as_mut_ptr());
+        let out = out.assume_init();
+        match hres {
+            S_OK => {}
+            E_INVALIDARG => return Ok(None),
+            _ => {
+                CoTaskMemFree(out.cast());
+                return Err(GetHomeError::HResult(hres));
+            }
+        }
+        let s = U16CStr::from_ptr_str(out).to_os_string().into();
+        CoTaskMemFree(out.cast());
+        Ok(Some(s))
+    }
+}
+
+/// Get the user ID of the current process' user.
+///
+/// This function uses the
+/// [`GetTokenInformation`](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation)
+/// with a handle obtained from the
+/// [`OpenProcessToken`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocesstoken).
+pub fn get_my_id() -> Result<UserIdentifier, GetHomeError> {
+    unsafe {
+        // Get this process' user's SID
+        let (sid, lay) = get_my_sid()?;
+        // Convert it to a string
+        let ret = sid_to_string((*sid.cast::<TOKEN_USER>()).User.Sid.cast());
+        // Free the SID
+        dealloc(sid.cast(), lay);
+        // Return
+        ret
+    }
+}
+
+unsafe fn get_process_token() -> Result<isize, GetHomeError> {
+    // get the handle of the current process
+    let handle = GetCurrentProcess();
+    let mut token_handle = 0isize;
+    // get a token to query information about the current process.
+    if OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle) == 0 {
+        return Err(GetHomeError::WindowsError(GetLastError()));
+    }
+    Ok(token_handle)
 }
 
 unsafe fn get_my_sid() -> Result<(*mut c_void, Layout), GetHomeError> {
-    // get the handle of the current process
-    let handle = GetCurrentProcess();
-    let mut buffer_size = 0u32;
-    let mut token_handle = 0isize;
-    // get a token to query information about the current process.
-    let mut check_err = OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle);
-    if check_err == 0 {
-        return Err(GetHomeError::WindowsError(GetLastError()));
-    }
+    let token_handle = get_process_token()?;
+    let mut buffer_size = 0;
     // query the length of the buffer needed to get store the TOKEN_USER structure.
-    check_err = GetTokenInformation(token_handle, TokenUser, null_mut(), 0, &mut buffer_size);
-    if check_err == 0 {
+    if GetTokenInformation(token_handle, TokenUser, null_mut(), 0, &mut buffer_size) == 0 {
         let err = GetLastError();
         if err != ERROR_INSUFFICIENT_BUFFER {
             CloseHandle(token_handle);
@@ -155,11 +237,11 @@ unsafe fn get_my_sid() -> Result<(*mut c_void, Layout), GetHomeError> {
     // allocate buffer
     let ptr = alloc(layout).cast();
     // get the TOKEN_USER structure into ptr.
-    check_err = GetTokenInformation(token_handle, TokenUser, ptr, buffer_size, &mut buffer_size);
-    if check_err == 0 {
+    if GetTokenInformation(token_handle, TokenUser, ptr, buffer_size, &mut buffer_size) == 0 {
         dealloc(ptr.cast(), layout);
+        let err = GetLastError();
         CloseHandle(token_handle);
-        return Err(GetHomeError::WindowsError(GetLastError()));
+        return Err(GetHomeError::WindowsError(err));
     }
     // make sure to close the handle.
     if CloseHandle(token_handle) == 0 {
@@ -168,13 +250,27 @@ unsafe fn get_my_sid() -> Result<(*mut c_void, Layout), GetHomeError> {
     Ok((ptr, layout))
 }
 
+unsafe fn sid_to_string(sid: *mut c_void) -> Result<UserIdentifier, GetHomeError> {
+    let mut str_pointer: *mut u16 = null_mut();
+    // convert the SID to a string.
+    if ConvertSidToStringSidW(sid, &mut str_pointer) == 0 {
+        return Err(GetHomeError::WindowsError(GetLastError()));
+    }
+    let ret = U16CStr::from_ptr_str(str_pointer).to_string().unwrap();
+    if LocalFree(str_pointer as isize) != 0 {
+        Err(GetHomeError::WindowsError(GetLastError()))
+    } else {
+        Ok(ret)
+    }
+}
+
 unsafe fn get_user_sid(username: &str) -> Result<Option<(*mut c_void, Layout)>, GetHomeError> {
     let mut sid_size = 0u32;
     let mut domain_size = 0u32;
     let mut peuse: SID_NAME_USE = 0;
     let username = U16CString::from_str(username)?;
     // get the length of the buffers needed to store the sid and domain.
-    let mut check_err = LookupAccountNameW(
+    if LookupAccountNameW(
         null(),
         username.as_ptr(),
         null_mut(),
@@ -182,8 +278,8 @@ unsafe fn get_user_sid(username: &str) -> Result<Option<(*mut c_void, Layout)>, 
         null_mut(),
         &mut domain_size,
         &mut peuse,
-    );
-    if check_err == 0 {
+    ) == 0
+    {
         match GetLastError() {
             ERROR_INSUFFICIENT_BUFFER => {}
             // this is returned if the user could not be associated with an SID
@@ -198,7 +294,7 @@ unsafe fn get_user_sid(username: &str) -> Result<Option<(*mut c_void, Layout)>, 
     // for the call to get the SID.
     let domain = alloc(domain_layout).cast();
     // Lookup the SID.
-    check_err = LookupAccountNameW(
+    let check_err = LookupAccountNameW(
         null(),
         username.as_ptr(),
         sid,
@@ -216,65 +312,15 @@ unsafe fn get_user_sid(username: &str) -> Result<Option<(*mut c_void, Layout)>, 
     Ok(Some((sid, layout)))
 }
 
-unsafe fn get_sid_home(sid: *mut c_void) -> Result<PathBuf, GetHomeError> {
-    let mut str_pointer: *mut u16 = null_mut();
-    // convert the SID to a string.
-    let check_err = ConvertSidToStringSidW(sid, &mut str_pointer);
-    if check_err == 0 {
-        return Err(GetHomeError::WindowsError(GetLastError()));
-    }
-    // Prepend the SID string with the path in the registry. The HKLM value is not added to the prefix,
-    // as it is the root key used to make the request.
-    let mut path =
-        u16str!("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\").to_owned();
-    path.push(U16CStr::from_ptr_str(str_pointer).as_ustr());
-    // Free the memory allocated for the SID string.
-    if LocalFree(str_pointer as isize) != 0 {
-        return Err(GetHomeError::WindowsError(GetLastError()));
-    }
-    let path = U16CString::from_vec(path.into_vec())?;
-    let mut out_path_length = 0u32;
-    let key = HKEY_LOCAL_MACHINE;
-    let name = u16cstr!("ProfileImagePath").as_ptr();
-    // check the length required to store the home directory.
-    let mut check_err = RegGetValueW(
-        key,
-        path.as_ptr(),
-        name,
-        RRF_RT_REG_SZ,
-        null_mut(),
-        null_mut(),
-        &mut out_path_length,
-    );
-    if check_err != ERROR_SUCCESS {
-        return Err(GetHomeError::WindowsError(check_err));
-    }
-    let layout = Layout::from_size_align(out_path_length as usize, 2).unwrap();
-    // allocate buffer for the home directory
-    let out_path = alloc(layout).cast();
-    // get the value from the registry.
-    check_err = RegGetValueW(
-        key,
-        path.as_ptr(),
-        name,
-        RRF_RT_REG_SZ,
-        null_mut(),
-        out_path,
-        &mut out_path_length,
-    );
-    if check_err != ERROR_SUCCESS {
-        dealloc(out_path.cast(), layout);
-        return Err(GetHomeError::WindowsError(check_err));
-    }
-    let ret = U16CStr::from_ptr_str(out_path.cast()).to_os_string().into();
-    // deallocate the temporary buffer used to store the registry value.
-    dealloc(out_path.cast(), layout);
-    Ok(ret)
-}
-
 impl From<ContainsNul<u16>> for GetHomeError {
     fn from(value: ContainsNul<u16>) -> Self {
         Self::NulError(value)
+    }
+}
+
+impl From<WMIError> for GetHomeError {
+    fn from(value: WMIError) -> Self {
+        Self::WMIError(value)
     }
 }
 
@@ -282,7 +328,9 @@ impl fmt::Display for GetHomeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NulError(e) => write!(f, "null error: {e}"),
-            Self::WindowsError(e) => write!(f, "windows error: code = {e}"),
+            Self::WindowsError(e) => write!(f, "windows error: code = {e:#x}"),
+            Self::HResult(e) => write!(f, "windows error: hresult = {e:#x}"),
+            Self::WMIError(e) => write!(f, "wmi error: {e}"),
         }
     }
 }
@@ -291,7 +339,8 @@ impl Error for GetHomeError {
     fn cause(&self) -> Option<&dyn Error> {
         match self {
             Self::NulError(e) => Some(e),
-            Self::WindowsError(_) => None,
+            Self::WMIError(e) => Some(e),
+            Self::WindowsError(_) | Self::HResult(_) => None,
         }
     }
 }

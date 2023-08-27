@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 
 //! This crate exists to provide a portable method to getting any user's home
-//! directory. The API is rather simple: there are two functions,
+//! directory. The API is rather simple: there are two main functions,
 //! [`get_home`] and [`get_my_home`]. The former can get the home directory
 //! of any user provided you have their username. The latter can get the home
 //! directory of the user executing this process.
@@ -22,21 +22,8 @@
 //!
 //! ```toml
 //! [dependencies]
-//! homedir = "0.1.0"
+//! homedir = "0.2.0"
 //! ```
-//!
-//! By default, on Unix, if the library cannot find the current user's home directory
-//! in the `/etc/passwd` file, it will return `None`. However, it is possible that
-//! some users want it to check the `$HOME` environment variable instead.
-//! The `check_env` feature flag can be set to enable this behaviour. To enable
-//! this feature, replace the above lines in the `Cargo.toml` with
-//!
-//! ```toml
-//! [dependencies]
-//! homedir = { version = '0.1.0", features = ["check_env"] }
-//! ```
-//!
-//! This feature is only useful on Unix systems; it has no effect on Windows.
 //!
 //! # Examples
 //! ## Get the process' user's home directory.
@@ -62,6 +49,21 @@
 //! );
 //! assert!(get_home("NonExistentUser").unwrap().is_none());
 //! ```
+//!
+//! Note for users upgrading from version 0.1.0:
+//! On Unix systems, the previous behaviour of [`get_my_home`]
+//! was to check the `/etc/passwd` file first, then the `$HOME`
+//! variable if the `check_env` feature was set. This has
+//! been changed in this version. Instead, the `$HOME`
+//! environment variable is checked first, and then the `/etc/passwd`
+//! file. To emulate the old behaviour, use the `unix::get_home_from_id`
+//! alongside `unix::get_my_id`.
+//!
+//! Unfortunately, on Windows, this crate currently brings on quite
+//! a few dependencies through the `wmi`, `windows-sys`, `widestring`,
+//! and `serde` crates. In the future, a newer version will
+//! most likely no longer require `serde` and `wmi`. However, for now,
+//! these are required.
 
 use cfg_if::cfg_if;
 
@@ -71,11 +73,13 @@ cfg_if! {
         pub mod windows;
         pub use windows::get_home;
         pub use windows::get_my_home;
+        pub use windows::GetHomeError;
     } else if #[cfg(unix)] {
         /// Contains the implementation of the crate for Unix systems.
         pub mod unix;
         pub use unix::get_home;
         pub use unix::get_my_home;
+        pub use unix::GetHomeError;
     } else {
         compile_error!("this crate only supports windows and unix systems");
     }

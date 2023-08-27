@@ -5,7 +5,7 @@
 
 [package]
 name = "homedir"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["James Petersen <m@jamespetersen.ca>"]
 license = "MIT OR Apache-2.0"
@@ -25,20 +25,16 @@ nix = { version = "0.26.2", features = ["user"] }
 # Windows Dependencies
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.48.0", features = [
-    "Win32_Security",
-    "Win32_System_SystemServices",
-    "Win32_System_Threading",
     "Win32_Foundation",
     "Win32_Security_Authorization",
+    "Win32_System_Com",
     "Win32_System_Memory",
-    "Win32_System_Registry"
+    "Win32_System_Threading",
+    "Win32_UI_Shell"
 ] }
 widestring = "1.0.2"
-
-[features]
-# If the home directory could not be found via the normal method,
-# get it from the environment.
-check_env = []
+wmi = "0.13.1"
+serde = { version = "1.0.188", features = ["derive"] }
 
 [dependencies]
 cfg-if = "1.0.0"
