@@ -137,7 +137,7 @@ pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeE
     Ok(Some(p.local_path.into()))
 }
 
-/// Get a user's id from their uesrname.
+/// Get a user's id from their username.
 ///
 /// This function uses
 /// [`LookupAccountNameW`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupaccountnamew)
