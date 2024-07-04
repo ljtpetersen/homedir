@@ -84,7 +84,7 @@
 //! with libraries that use `OleInitialize`, which requires `COINIT_APARTMENTTHREADED`.
 //!
 //! To prevent these issues, the feature `windows_no_coinitialize` can be used. If it is specified,
-//! then the program will no longer try to call `CoInitializeEx`. Then, in order to use
+//! then the program will no longer try to call `CoInitializeEx`. Thus, in order to use
 //! [`get_home`], it will be necessary to first call `CoInitializeEx` with whatever parameters are
 //! required, or initialize the other libraries that use it (for example
 //! [`wmi`](https://crates.io/crates/wmi)) first.
