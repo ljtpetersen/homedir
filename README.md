@@ -6,6 +6,11 @@ directory. The API is rather simple: there are two main functions,
 of any user provided you have their username. The latter can get the home
 directory of the user executing this process.
 
+If all that is necessary is the home directory of the user executing this process,
+then other crates may be better options, such as
+[`directories`](https://crates.io/crates/directories). As well, using the home directory to find the
+documents, downloads, pictures, etc. directories may not be accurate.
+
 This crate aims to work on both Windows and Unix systems. However,
 Unix systems do not have a unified API. This crate may not work
 on Unix systems which do not have the `getpwnam_r(3)`, `getpwuid_r(3)`,
@@ -17,7 +22,7 @@ or adding the following to the dependencies in your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-homedir = "0.2.1"
+homedir = "0.3.0"
 ```
 
 ## Examples
@@ -59,11 +64,15 @@ at your option.
 
 ## Contribution
 
-Unless you explicitely state otherwise, any contribution intentionally submitted
+Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall
 be dual licensed as above, without any additional terms or conditions.
 
 Feel free to put a copyright header in your name in any files you contribute to.
 
-## Copyright
+## Copyright and Credits
 Copyright (C) 2023 James Petersen <m@jamespetersen.ca>.
+
+In version `0.3.0`, the [`wmi-rs`](https://github.com/ohadravid/wmi-rs) crate was referenced when re-writing the `get_home_from_id`
+function, though there may not be any resemblance now. Nonetheless, I felt it was important to properly credit them, hence I included
+this statement here. The referenced repository is also licensed under APACHE and MIT, which are included in this repository.

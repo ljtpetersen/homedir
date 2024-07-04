@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2024-07-04
+
+### Added
+- `GetHomeInstance` on Windows, for caching purposes.
+
+### Changed
+- The variants of `GetHomeError` on Windows have been adapted to the new implementation.
+- The `UserIdentifier` type on Windows is now immutable.
+- The `windows-sys` dependency has been replaced with the `windows` crate, as `windows-sys`
+  is lacking in a required type.
+
+### Removed
+- The `wmi` and `serde` dependencies have been removed.
+
 ## [0.2.1] - 2023-08-27
+
 ### Fixed
 - Documentation tests that would not compile have been fixed.
 

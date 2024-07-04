@@ -41,6 +41,5 @@ cfg-if = "1.0.0"
 
 [features]
 default = []
-# This is for Windows specifically.
 windows_no_coinitialize = []
 
