@@ -90,7 +90,7 @@
 //! [`wmi`](https://crates.io/crates/wmi)) first.
 //!
 //! Finally, this program has been tested on a regular Windows 11 installation. According to MSN,
-//! it should work as far back as Windows 7, though it hasn't been tested on it. However, it has
+//! it should work as far back as Windows 7, though it hasn't been tested on it. As well, it has
 //! not been tested within any Active Directory Windows installation, and the implementation does
 //! not test for this or try to account for it in any way. If it does work on these, it will likely
 //! return the local profile path of the specified user.
