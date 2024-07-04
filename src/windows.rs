@@ -3,11 +3,11 @@
 // Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
 // Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
-use std::{ops::Deref, path::PathBuf, ptr::null_mut, string::FromUtf16Error};
+use std::{alloc::{alloc_zeroed, dealloc, Layout}, mem::align_of, ops::Deref, path::PathBuf, ptr::null_mut, string::FromUtf16Error};
 
 use cfg_if::cfg_if;
 use widestring::{error::{ContainsNul, Utf16Error}, U16CStr, U16CString, U16Str};
-use windows::{core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT}, Win32::{Foundation::{CloseHandle, LocalFree, CO_E_NOTINITIALIZED, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID}, Security::{Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW, TokenUser, SID_NAME_USE, TOKEN_QUERY}, System::{Com::{CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE}, Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE}, Threading::{GetCurrentProcess, OpenProcessToken}, Wmi::{IWbemLocator, IWbemServices, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE}}, UI::Shell::{FOLDERID_Profile, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG}}};
+use windows::{core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT}, Win32::{Foundation::{CloseHandle, LocalFree, CO_E_NOTINITIALIZED, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID}, Security::{Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW, TokenUser, SID, SID_NAME_USE, TOKEN_QUERY, TOKEN_USER}, System::{Com::{CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE}, Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE}, Threading::{GetCurrentProcess, OpenProcessToken}, Wmi::{IWbemLocator, IWbemServices, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE}}, UI::Shell::{FOLDERID_Profile, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG}}};
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -57,18 +57,22 @@ pub fn get_id<S: AsRef<str>>(username: S) -> Result<Option<UserIdentifier>, GetH
                 return Err(e.into());
             }
         }
-        let mut sid_buf = vec![0u8; sid_size as usize];
+        let layout = Layout::from_size_align(sid_size as usize, align_of::<SID>()).unwrap();
+        let sid_buf = alloc_zeroed(layout);
         let mut domain = vec![0; domain_size as usize];
+        let psid = PSID(sid_buf.cast());
         LookupAccountNameW(
             None,
             PCWSTR(username.as_ptr()),
-            PSID(sid_buf.as_mut_ptr().cast()),
+            psid,
             &mut sid_size,
             PWSTR(domain.as_mut_ptr()),
             &mut domain_size,
             &mut peuse,
         )?;
-        sid_to_string(sid_buf).map(Some)
+        let ret = sid_to_string(psid).map(Some);
+        dealloc(sid_buf, layout);
+        ret
     }
 }
 
@@ -92,14 +96,15 @@ pub fn get_my_id() -> Result<UserIdentifier, GetHomeError> {
                 return Err(e.into());
             }
         }
-        // buffer_size now contains the # of bytes.
-        // TODO: check if SID alignment is greater than 1.
-        let mut buf = vec![0; buffer_size as usize];
-        if let Err(e) = GetTokenInformation(token_handle, TokenUser, Some(buf.as_mut_ptr().cast()), buffer_size, &mut buffer_size) {
+        let layout = Layout::from_size_align(buffer_size as usize, align_of::<TOKEN_USER>()).unwrap();
+        let buf_ptr = alloc_zeroed(layout);
+        if let Err(e) = GetTokenInformation(token_handle, TokenUser, Some(buf_ptr.cast()), buffer_size, &mut buffer_size) {
             let _ = CloseHandle(token_handle);
             return Err(e.into());
         }
-        sid_to_string(buf)
+        let ret = sid_to_string((*buf_ptr.cast::<TOKEN_USER>()).User.Sid);
+        dealloc(buf_ptr, layout);
+        ret
     }
 }
 
@@ -116,10 +121,10 @@ pub fn get_my_home() -> Result<Option<PathBuf>, GetHomeError> {
     }
 }
 
-unsafe fn sid_to_string(mut sid: Vec<u8>) -> Result<UserIdentifier, GetHomeError> {
+unsafe fn sid_to_string(sid: PSID) -> Result<UserIdentifier, GetHomeError> {
     let mut str_pointer: PWSTR = PWSTR::null();
     // convert the SID to string.
-    ConvertSidToStringSidW(PSID(sid.as_mut_ptr().cast()), &mut str_pointer)?;
+    ConvertSidToStringSidW(sid, &mut str_pointer)?;
     let ret = match U16CStr::from_ptr_str(str_pointer.0).to_string() {
         Ok(v) => v,
         Err(e) => {
