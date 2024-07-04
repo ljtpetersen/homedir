@@ -1,6 +1,6 @@
 // src/unix.rs
 //
-// Copyright (C) 2023 James Petersen <m@jamespetersen.ca>
+// Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
 // Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
 use std::env::var_os;
@@ -69,7 +69,7 @@ pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeE
 }
 
 /// Get a user's id from their username. This function operates identically to
-/// the [`get_home`](get_home) function, except it reads the `uid` field
+/// the [`get_home`] function, except it reads the `uid` field
 /// from the `User` structure instead of the `dir` field. Because of this,
 /// doing `get_home_from_id(get_id(name))` is not recommended. Instead,
 /// `get_home(name)` should be used.
