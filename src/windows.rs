@@ -3,16 +3,15 @@
 // Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
 // Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
-use std::{cell::Cell, path::PathBuf, ptr::null_mut, string::FromUtf16Error};
+use std::{ops::Deref, path::PathBuf, ptr::null_mut, string::FromUtf16Error};
 
-use widestring::{error::{ContainsNul, Utf16Error}, U16CStr, U16CString, U16Str, Utf16Str, Utf16String};
-use windows::{core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT}, Win32::{Foundation::{CloseHandle, LocalFree, CO_E_NOTINITIALIZED, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID}, Security::{Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW, TokenUser, SID_NAME_USE, TOKEN_QUERY}, System::{Com::{CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE}, Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE}, Threading::{GetCurrentProcess, OpenProcessToken}, Variant::VT_BSTR, Wmi::{IWbemLocator, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE}}, UI::Shell::{FOLDERID_Profile, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG}}};
+use cfg_if::cfg_if;
+use widestring::{error::{ContainsNul, Utf16Error}, U16CStr, U16CString, U16Str};
+use windows::{core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT}, Win32::{Foundation::{CloseHandle, LocalFree, CO_E_NOTINITIALIZED, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID}, Security::{Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW, TokenUser, SID_NAME_USE, TOKEN_QUERY}, System::{Com::{CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE}, Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE}, Threading::{GetCurrentProcess, OpenProcessToken}, Wmi::{IWbemLocator, IWbemServices, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE}}, UI::Shell::{FOLDERID_Profile, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG}}};
 
-thread_local! {
-    static COM_INITIALIZED: Cell<bool> = const { Cell::new(false) };
-}
-
-pub type UserIdentifier = String;
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct UserIdentifier(String);
 
 #[derive(Debug)]
 pub enum GetHomeError {
@@ -24,6 +23,8 @@ pub enum GetHomeError {
     WMINotBSTR,
 }
 
+pub struct GetHomeInstance(IWbemServices);
+
 pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError> {
     let Some(s) = get_id(username.as_ref())? else {
         return Ok(None);
@@ -32,62 +33,7 @@ pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeEr
 }
 
 pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
-    const NAMESPACE_PATH: &str = "ROOT\\CIMV2";
-    unsafe {
-        let instance_fn = || CoCreateInstance::<_, IWbemLocator>(&WbemLocator, None, CLSCTX_INPROC_SERVER);
-        let instance = match instance_fn() {
-            Ok(v) => v,
-            Err(e) => {
-                if e != CO_E_NOTINITIALIZED.into() || COM_INITIALIZED.get() {
-                    return Err(e.into());
-                }
-                CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
-                instance_fn()?
-            },
-        };
-        let nms_path_bstr = BSTR::from(NAMESPACE_PATH);
-        let svc = instance.ConnectServer(
-            &nms_path_bstr,
-            &BSTR::new(),
-            &BSTR::new(),
-            &BSTR::new(),
-            WBEM_FLAG_CONNECT_USE_MAX_WAIT.0,
-            &BSTR::new(),
-            None,
-        )?;
-        CoSetProxyBlanket(
-            &svc,
-            RPC_C_AUTHN_WINNT,
-            RPC_C_AUTHZ_NONE,
-            None,
-            RPC_C_AUTHN_LEVEL_CALL,
-            RPC_C_IMP_LEVEL_IMPERSONATE,
-            None,
-            EOAC_NONE,
-        )?;
-
-        let query_enum = svc.ExecQuery(&BSTR::from("WQL"), &BSTR::from(format!("SELECT LocalPath FROM Win32_UserProfile WHERE SID = '{id}'")), WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, None)?;
-        let mut ret = [None; 1];
-        let mut ret_count = 0;
-        query_enum.Next(WBEM_INFINITE, &mut ret, &mut ret_count).ok()?;
-        if ret_count == 0 {
-            return Ok(None);
-        }
-        let [ret] = ret;
-        let ret = ret.ok_or(GetHomeError::NullPointerResult)?;
-        let name = w!("LocalPath");
-        let mut variant = VARIANT::default();
-        let mut vt_type = 0;
-        ret.Get(
-            name,
-            0,
-            &mut variant,
-            Some(&mut vt_type),
-            None
-        )?;
-        let bstr = BSTR::try_from(&variant)?;
-        Ok(Some(PathBuf::from(U16Str::from_slice(bstr.as_wide()).to_os_string())))
-    }
+    GetHomeInstance::new()?.get_home_from_id(id)
 }
 
 pub fn get_id<S: AsRef<str>>(username: S) -> Result<Option<UserIdentifier>, GetHomeError> {
@@ -185,7 +131,79 @@ unsafe fn sid_to_string(mut sid: Vec<u8>) -> Result<UserIdentifier, GetHomeError
     if !LocalFree(HLOCAL(str_pointer.0.cast())).0.is_null() {
         Err(WinError::from_win32())?;
     }
-    Ok(ret)
+    Ok(UserIdentifier(ret))
+}
+
+impl GetHomeInstance {
+    pub fn new() -> Result<Self, GetHomeError> {
+        unsafe {
+            const NAMESPACE_PATH: &str = "ROOT\\CIMV2";
+            cfg_if!(
+                if #[cfg(feature = "windows_no_coinitialize")] {
+                    let instance = CoCreateInstance::<_, IWbemLocator>(&WbemLocator, None, CLSCTX_INPROC_SERVER);
+                } else {
+                    let instance_fn = || CoCreateInstance::<_, IWbemLocator>(&WbemLocator, None, CLSCTX_INPROC_SERVER);
+                    let instance = match instance_fn() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            if e != CO_E_NOTINITIALIZED.into() {
+                                return Err(e.into());
+                            }
+                            CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+                            instance_fn()?
+                        },
+                    };
+                }
+            );
+            let nms_path_bstr = BSTR::from(NAMESPACE_PATH);
+            let svc = instance.ConnectServer(
+                &nms_path_bstr,
+                &BSTR::new(),
+                &BSTR::new(),
+                &BSTR::new(),
+                WBEM_FLAG_CONNECT_USE_MAX_WAIT.0,
+                &BSTR::new(),
+                None,
+            )?;
+            CoSetProxyBlanket(
+                &svc,
+                RPC_C_AUTHN_WINNT,
+                RPC_C_AUTHZ_NONE,
+                None,
+                RPC_C_AUTHN_LEVEL_CALL,
+                RPC_C_IMP_LEVEL_IMPERSONATE,
+                None,
+                EOAC_NONE,
+            )?;
+            Ok(Self(svc))
+        }
+    }
+
+    pub fn get_home_from_id(&self, id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
+        unsafe {
+            let query_enum = self.0.ExecQuery(&BSTR::from("WQL"), &BSTR::from(format!("SELECT LocalPath FROM Win32_UserProfile WHERE SID = '{}'", id.0)), WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, None)?;
+            let mut ret = [None; 1];
+            let mut ret_count = 0;
+            query_enum.Next(WBEM_INFINITE, &mut ret, &mut ret_count).ok()?;
+            if ret_count == 0 {
+                return Ok(None);
+            }
+            let [ret] = ret;
+            let ret = ret.ok_or(GetHomeError::NullPointerResult)?;
+            let name = w!("LocalPath");
+            let mut variant = VARIANT::default();
+            let mut vt_type = 0;
+            ret.Get(
+                name,
+                0,
+                &mut variant,
+                Some(&mut vt_type),
+                None
+            )?;
+            let bstr = BSTR::try_from(&variant)?;
+            Ok(Some(U16Str::from_slice(bstr.as_wide()).to_os_string().into()))
+        }
+    }
 }
 
 impl From<WinError> for GetHomeError {
@@ -209,5 +227,13 @@ impl From<ContainsNul<u16>> for GetHomeError {
 impl From<FromUtf16Error> for GetHomeError {
     fn from(value: FromUtf16Error) -> Self {
         Self::FromUtf16Error(value)
+    }
+}
+
+impl Deref for UserIdentifier {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
