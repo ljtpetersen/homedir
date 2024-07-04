@@ -7,7 +7,6 @@ use core::fmt;
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
     mem::align_of,
-    ops::Deref,
     path::PathBuf,
     ptr::null_mut,
 };
@@ -49,12 +48,10 @@ use windows::{
 ///
 /// This contains the text representation of the user's
 /// [SID](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers).
-/// It can be dereferenced to obtain this text.
 ///
-/// It is currently an opaque type to prevent any potential unsoundness from having invalid SIDs
-/// passed to [`get_home_from_id`].
+/// See [`UserIdentifier::with_username`] for an example of the usage of this structure.
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UserIdentifier(String);
 
 /// This enumeration is the error type returned by this crate's functions
@@ -74,117 +71,25 @@ pub enum GetHomeError {
 }
 
 /// This structure caches the results of the operations necessary to check the profile
-/// directory from an SID, see [`GetHomeInstance::get_home_from_id`]. This way, multiple
+/// directory from an SID, see [`GetHomeInstance::query_home`]. This way, multiple
 /// queries can be performed at a smaller cost.
 pub struct GetHomeInstance(IWbemServices);
 
 /// This function will get the home directory of a user given their username. Internally,
-/// it calls [`get_id`] followed by [`get_home_from_id`].
+/// it calls [`UserIdentifier::with_username`] followed by [`UserIdentifier::to_home`].
 ///
 /// Calling this function may present some issues if any other parts of the program use
 /// [`CoInitializeEx`](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex).
 /// See [for Windows users](crate#for-windows-users) for more information.
-pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError> {
-    let Some(s) = get_id(username.as_ref())? else {
+pub fn home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError> {
+    let Some(id) = UserIdentifier::with_username(username)? else {
         return Ok(None);
     };
-    get_home_from_id(&s)
-}
-
-/// This function will get the home directory of a user given their identifier. This identifier can
-/// be obtained from [`get_id`]. The current process' user identifier can be found from
-/// [`get_my_id`]. Internally, this function calls [`GetHomeInstance::new`] followed by
-/// [`GetHomeInstance::get_home_from_id`].
-///
-/// Calling this function may present some issues if any other parts of the program use
-/// [`CoInitializeEx`](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex).
-/// See [for Windows users](crate#for-windows-users) for more information.
-pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
-    GetHomeInstance::new()?.get_home_from_id(id)
-}
-
-/// Get the identifier of a user given their username.
-pub fn get_id<S: AsRef<str>>(username: S) -> Result<Option<UserIdentifier>, GetHomeError> {
-    unsafe {
-        let username = U16CString::from_str(username)?;
-        let mut sid_size = 0;
-        let mut domain_size = 0;
-        let mut peuse = SID_NAME_USE(0);
-        // get buffer length necessary for SID.
-        if let Err(e) = LookupAccountNameW(
-            None,
-            PCWSTR(username.as_ptr()),
-            PSID(null_mut()),
-            &mut sid_size,
-            PWSTR::null(),
-            &mut domain_size,
-            &mut peuse,
-        ) {
-            if e == ERROR_NONE_MAPPED.into() {
-                return Ok(None);
-            } else if e != ERROR_INSUFFICIENT_BUFFER.into() {
-                return Err(e.into());
-            }
-        }
-        let layout = Layout::from_size_align(sid_size as usize, align_of::<SID>()).unwrap();
-        let sid_buf = alloc_zeroed(layout);
-        // the domain is unfortunately necessary, otherwise the function will not operate
-        // correctly.
-        let mut domain = vec![0; domain_size as usize];
-        let psid = PSID(sid_buf.cast());
-        LookupAccountNameW(
-            None,
-            PCWSTR(username.as_ptr()),
-            psid,
-            &mut sid_size,
-            PWSTR(domain.as_mut_ptr()),
-            &mut domain_size,
-            &mut peuse,
-        )?;
-        let ret = sid_to_string(psid).map(Some);
-        dealloc(sid_buf, layout);
-        ret
-    }
-}
-
-/// Get the identifier of this process' user.
-pub fn get_my_id() -> Result<UserIdentifier, GetHomeError> {
-    unsafe {
-        // get the handle of the current process.
-        let handle = GetCurrentProcess();
-        let mut token_handle = HANDLE(0);
-        // get a token to query information about the current process. this handle must be dropped
-        // manually with CloseHandle, as seen below.
-        OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle)?;
-        let mut buffer_size = 0;
-        // get the length of the buffer requried for this query.
-        if let Err(e) = GetTokenInformation(token_handle, TokenUser, None, 0, &mut buffer_size) {
-            if e != ERROR_INSUFFICIENT_BUFFER.into() {
-                let _ = CloseHandle(token_handle);
-                return Err(e.into());
-            }
-        }
-        let layout =
-            Layout::from_size_align(buffer_size as usize, align_of::<TOKEN_USER>()).unwrap();
-        let buf_ptr = alloc_zeroed(layout);
-        if let Err(e) = GetTokenInformation(
-            token_handle,
-            TokenUser,
-            Some(buf_ptr.cast()),
-            buffer_size,
-            &mut buffer_size,
-        ) {
-            let _ = CloseHandle(token_handle);
-            return Err(e.into());
-        }
-        let ret = sid_to_string((*buf_ptr.cast::<TOKEN_USER>()).User.Sid);
-        dealloc(buf_ptr, layout);
-        ret
-    }
+    id.to_home()
 }
 
 /// Get the home directory of the current process' user.
-pub fn get_my_home() -> Result<Option<PathBuf>, GetHomeError> {
+pub fn my_home() -> Result<Option<PathBuf>, GetHomeError> {
     unsafe {
         let out = SHGetKnownFolderPath(&FOLDERID_Profile, KNOWN_FOLDER_FLAG(0), None)?.0;
         // there isn't any documented case where this will occur, but who knows.
@@ -216,15 +121,109 @@ unsafe fn sid_to_string(sid: PSID) -> Result<UserIdentifier, GetHomeError> {
     Ok(UserIdentifier(ret))
 }
 
+impl UserIdentifier {
+    /// Get the user identifier of a user given their username.
+    pub fn with_username<S: AsRef<str>>(
+        username: S,
+    ) -> Result<Option<UserIdentifier>, GetHomeError> {
+        unsafe {
+            let username = U16CString::from_str(username)?;
+            let mut sid_size = 0;
+            let mut domain_size = 0;
+            let mut peuse = SID_NAME_USE(0);
+            // get buffer length necessary for SID.
+            if let Err(e) = LookupAccountNameW(
+                None,
+                PCWSTR(username.as_ptr()),
+                PSID(null_mut()),
+                &mut sid_size,
+                PWSTR::null(),
+                &mut domain_size,
+                &mut peuse,
+            ) {
+                if e == ERROR_NONE_MAPPED.into() {
+                    return Ok(None);
+                } else if e != ERROR_INSUFFICIENT_BUFFER.into() {
+                    return Err(e.into());
+                }
+            }
+            let layout = Layout::from_size_align(sid_size as usize, align_of::<SID>()).unwrap();
+            let sid_buf = alloc_zeroed(layout);
+            // the domain is unfortunately necessary, otherwise the function will not operate
+            // correctly.
+            let mut domain = vec![0; domain_size as usize];
+            let psid = PSID(sid_buf.cast());
+            LookupAccountNameW(
+                None,
+                PCWSTR(username.as_ptr()),
+                psid,
+                &mut sid_size,
+                PWSTR(domain.as_mut_ptr()),
+                &mut domain_size,
+                &mut peuse,
+            )?;
+            let ret = sid_to_string(psid).map(Some);
+            dealloc(sid_buf, layout);
+            ret
+        }
+    }
+
+    /// This function will get the home directory of a user given their identifier.
+    /// Internally, this function calls [`GetHomeInstance::new`] followed by
+    /// [`GetHomeInstance::query_home`].
+    ///
+    /// Calling this function may present some issues if any other parts of the program use
+    /// [`CoInitializeEx`](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex).
+    /// See [for Windows users](crate#for-windows-users) for more information.
+    pub fn to_home(&self) -> Result<Option<PathBuf>, GetHomeError> {
+        GetHomeInstance::new()?.query_home(self)
+    }
+
+    /// Get the identifier of this process' user.
+    pub fn my_id() -> Result<UserIdentifier, GetHomeError> {
+        unsafe {
+            // get the handle of the current process.
+            let handle = GetCurrentProcess();
+            let mut token_handle = HANDLE(0);
+            // get a token to query information about the current process. this handle must be dropped
+            // manually with CloseHandle, as seen below.
+            OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle)?;
+            let mut buffer_size = 0;
+            // get the length of the buffer requried for this query.
+            if let Err(e) = GetTokenInformation(token_handle, TokenUser, None, 0, &mut buffer_size)
+            {
+                if e != ERROR_INSUFFICIENT_BUFFER.into() {
+                    let _ = CloseHandle(token_handle);
+                    return Err(e.into());
+                }
+            }
+            let layout =
+                Layout::from_size_align(buffer_size as usize, align_of::<TOKEN_USER>()).unwrap();
+            let buf_ptr = alloc_zeroed(layout);
+            if let Err(e) = GetTokenInformation(
+                token_handle,
+                TokenUser,
+                Some(buf_ptr.cast()),
+                buffer_size,
+                &mut buffer_size,
+            ) {
+                let _ = CloseHandle(token_handle);
+                return Err(e.into());
+            }
+            let ret = sid_to_string((*buf_ptr.cast::<TOKEN_USER>()).User.Sid);
+            dealloc(buf_ptr, layout);
+            ret
+        }
+    }
+}
+
 impl GetHomeInstance {
     /// Construct this structure. This connects to the Windows Management Instrumentation.
     pub fn new() -> Result<Self, GetHomeError> {
         unsafe {
             const NAMESPACE_PATH: &str = "ROOT\\CIMV2";
             cfg_if!(
-                if #[cfg(feature = "windows_no_coinitialize")] {
-                    let instance = CoCreateInstance::<_, IWbemLocator>(&WbemLocator, None, CLSCTX_INPROC_SERVER);
-                } else {
+                if #[cfg(feature = "windows-coinitialize")] {
                     let instance_fn = || CoCreateInstance::<_, IWbemLocator>(&WbemLocator, None, CLSCTX_INPROC_SERVER);
                     let instance = match instance_fn() {
                         Ok(v) => v,
@@ -236,6 +235,8 @@ impl GetHomeInstance {
                             instance_fn()?
                         },
                     };
+                } else {
+                    let instance = CoCreateInstance::<_, IWbemLocator>(&WbemLocator, None, CLSCTX_INPROC_SERVER);
                 }
             );
             let nms_path_bstr = BSTR::from(NAMESPACE_PATH);
@@ -263,7 +264,7 @@ impl GetHomeInstance {
     }
 
     /// Get the home directory of a user given their identifier.
-    pub fn get_home_from_id(&self, id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
+    pub fn query_home(&self, id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeError> {
         unsafe {
             let query_enum = self.0.ExecQuery(
                 &BSTR::from("WQL"),
@@ -336,10 +337,14 @@ impl std::error::Error for GetHomeError {
     }
 }
 
-impl Deref for UserIdentifier {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
+impl AsRef<str> for UserIdentifier {
+    fn as_ref(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<UserIdentifier> for String {
+    fn from(value: UserIdentifier) -> Self {
+        value.0
     }
 }
