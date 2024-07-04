@@ -14,6 +14,7 @@ thread_local! {
 
 pub type UserIdentifier = String;
 
+#[derive(Debug)]
 pub enum GetHomeError {
     WindowsError(WinError),
     Utf16Error(Utf16Error),
