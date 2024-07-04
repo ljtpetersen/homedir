@@ -3,10 +3,10 @@
 // Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
 // Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
-use std::{cell::Cell, path::PathBuf, ptr::null_mut};
+use std::{cell::Cell, path::PathBuf, ptr::null_mut, string::FromUtf16Error};
 
-use widestring::{error::{ContainsNul, Utf16Error}, U16CStr, U16CString, Utf16Str, Utf16String};
-use windows::{core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT}, Win32::{Foundation::{CloseHandle, LocalFree, CO_E_NOTINITIALIZED, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID}, Security::{Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW, TokenUser, SID_NAME_USE, TOKEN_QUERY}, System::{Com::{CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE}, Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE}, Threading::{GetCurrentProcess, OpenProcessToken}, Wmi::{IWbemLocator, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE}}, UI::Shell::{FOLDERID_Profile, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG}}};
+use widestring::{error::{ContainsNul, Utf16Error}, U16CStr, U16CString, U16Str, Utf16Str, Utf16String};
+use windows::{core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT}, Win32::{Foundation::{CloseHandle, LocalFree, CO_E_NOTINITIALIZED, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID}, Security::{Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW, TokenUser, SID_NAME_USE, TOKEN_QUERY}, System::{Com::{CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE}, Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE}, Threading::{GetCurrentProcess, OpenProcessToken}, Variant::VT_BSTR, Wmi::{IWbemLocator, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE}}, UI::Shell::{FOLDERID_Profile, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG}}};
 
 thread_local! {
     static COM_INITIALIZED: Cell<bool> = const { Cell::new(false) };
@@ -17,9 +17,11 @@ pub type UserIdentifier = String;
 #[derive(Debug)]
 pub enum GetHomeError {
     WindowsError(WinError),
+    FromUtf16Error(FromUtf16Error),
     Utf16Error(Utf16Error),
     ContainsNul(ContainsNul<u16>),
     NullPointerResult,
+    WMINotBSTR,
 }
 
 pub fn get_home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError> {
@@ -83,9 +85,9 @@ pub fn get_home_from_id(id: &UserIdentifier) -> Result<Option<PathBuf>, GetHomeE
             Some(&mut vt_type),
             None
         )?;
-        println!("variant thing: {}", variant.as_raw().Anonymous.Anonymous.vt);
+        let bstr = BSTR::try_from(&variant)?;
+        Ok(Some(PathBuf::from(U16Str::from_slice(bstr.as_wide()).to_os_string())))
     }
-    todo!()
 }
 
 pub fn get_id<S: AsRef<str>>(username: S) -> Result<Option<UserIdentifier>, GetHomeError> {
@@ -201,5 +203,11 @@ impl From<Utf16Error> for GetHomeError {
 impl From<ContainsNul<u16>> for GetHomeError {
     fn from(value: ContainsNul<u16>) -> Self {
         Self::ContainsNul(value)
+    }
+}
+
+impl From<FromUtf16Error> for GetHomeError {
+    fn from(value: FromUtf16Error) -> Self {
+        Self::FromUtf16Error(value)
     }
 }
