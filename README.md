@@ -34,6 +34,10 @@ or adding the following to the dependencies in your `Cargo.toml` file.
 homedir = "0.3.0"
 ```
 
+### Features
+ * `windows-coinitialize` -- This is enabled by default. On Windows, call `CoInitializeEx` if `CoCreateInstance` returns `CO_E_NOTINITIALIZED`.
+ See the "For Windows Users" section of the documentation for details about `CoInitializeEx`.
+
 The full documentation of the crate, including examples, is available on the [docs.rs](https://docs.rs/homedir) page.
 
 ## Licensing

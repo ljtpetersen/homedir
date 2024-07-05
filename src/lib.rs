@@ -98,7 +98,7 @@
 //! using `COINIT_MULTITHREADED`, and it will not call `CoUninitialize` later. This will interfere
 //! with libraries that use `OleInitialize`, which requires `COINIT_APARTMENTTHREADED`.
 //!
-//! To prevent these issues, the feature `windows_no_coinitialize` can be used. If it is specified,
+//! To prevent these issues, the feature `windows-coinitialize` can be used. If it is specified,
 //! then the program will no longer try to call `CoInitializeEx`. Thus, in order to use
 //! [`home`], it will be necessary to first call `CoInitializeEx` with whatever parameters are
 //! required, or initialize the other libraries that use it (for example
