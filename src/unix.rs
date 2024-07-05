@@ -58,7 +58,7 @@ pub fn home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError>
 /// should that fail, it would only check the `$HOME` environemnt variable if
 /// the `check_env` feature was set. Now, it will check the `$HOME` environment
 /// variable first, falling back on the `/etc/passwd` file should that fail.
-/// To replicate the original behaviour of the function, do `get_home_from_id(get_my_id().unwrap())`.
+/// To replicate the original behaviour of the function, do `UserIdentifier::my_id()?.to_home()?`.
 /// Note that this can still return `None`, should the `/etc/passwd` file be missing an
 /// entry for the user id of the program.
 ///
