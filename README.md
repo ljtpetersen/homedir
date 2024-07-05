@@ -2,14 +2,21 @@
 
 This crate exists to provide a portable method to getting any user's home
 directory. The API is rather simple: there are two main functions,
-`get_home` and `get_my_home`. The former can get the home directory
+`home` and `my_home`. The former can get the home directory
 of any user provided you have their username. The latter can get the home
 directory of the user executing this process.
+
+If all that is necessary is the home directory of the user executing this process,
+then other crates may be better options, such as
+[`directories`](https://crates.io/crates/directories). As well, using the home directory to find the
+documents, downloads, pictures, etc. directories may not be accurate.
 
 This crate aims to work on both Windows and Unix systems. However,
 Unix systems do not have a unified API. This crate may not work
 on Unix systems which do not have the `getpwnam_r(3)`, `getpwuid_r(3)`,
-and `getuid(2)` functions.
+and `getuid(2)` functions. As well, special care is necessary for Windows
+programs which use the COM library in other places. See the "For Windows Users" section
+in the crate documentation for more details.
 
 ## Usage
 This crate is on [crates.io](https://crates.io/crates/homedir) and can be used by executing `cargo add homedir`
@@ -17,35 +24,10 @@ or adding the following to the dependencies in your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-homedir = "0.2.1"
+homedir = "0.3.0"
 ```
 
-## Examples
-### Get the process' user's home directory.
-```rust
-use homedir::get_my_home;
-
-// This assumes that the process' user has "/home/jpetersen" as home directory.
-assert_eq!(
-    std::path::Path::new("/home/jpetersen"),
-    get_my_home().unwrap().unwrap().as_path()
-);
-```
-
-### Get an arbitrary user's home directory.
-```rust
-use homedir::get_home;
-
-// This assumes there is a user named `Administrator` which has
-// `C:\Users\Administrator` as a home directory.
-assert_eq!(
-    std::path::Path::new("C:\\Users\\Administrator"),
-    get_home("Administrator").unwrap().unwrap().as_path()
-);
-assert!(get_home("NonExistentUser").unwrap().is_none());
-```
-
-The full documentation of the crate is available on the [docs.rs](https://docs.rs/homedir) page.
+The full documentation of the crate, including examples, is available on the [docs.rs](https://docs.rs/homedir) page.
 
 ## Licensing
 Licensed under either of
@@ -59,11 +41,16 @@ at your option.
 
 ## Contribution
 
-Unless you explicitely state otherwise, any contribution intentionally submitted
+Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall
 be dual licensed as above, without any additional terms or conditions.
 
 Feel free to put a copyright header in your name in any files you contribute to.
 
-## Copyright
-Copyright (C) 2023 James Petersen <m@jamespetersen.ca>.
+## Copyright and Credits
+Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>.
+
+In version `0.3.0`, the [`wmi-rs`](https://github.com/ohadravid/wmi-rs) crate was referenced when writing the
+`homedir::windows::UserIdentifier::to_owned`
+function, though there may not be any resemblance now. Nevertheless, I felt it was important to properly credit them, hence I included
+this statement here. The referenced repository is also licensed under APACHE and MIT, which are included in this repository.
