@@ -35,7 +35,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! homedir = "0.3.0"
+//! homedir = "0.3.1"
 //! ```
 //!
 //! # Examples
@@ -71,7 +71,7 @@
 //! # }
 //! ```
 //!
-//! # Upgrading from 0.2.1 to 0.3.0
+//! # Upgrading from 0.2.1 to 0.3.1
 //! There is a major API restructuring in this version. `get_my_home` has been renamed to
 //! [`my_home`] and `get_home` to [`home`]. As well, a cleaner implementation of a cross-platform
 //! API has been written, with inspiration taken from the Rust standard library. The
