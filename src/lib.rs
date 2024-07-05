@@ -161,7 +161,6 @@ pub struct GetHomeError(GetHomeErrorImp);
 /// instead.
 ///
 /// There is an example of the usage of this function in the [crate documentation](crate).
-#[inline(always)]
 pub fn home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError> {
     home_imp(username.as_ref()).map_err(GetHomeError)
 }
@@ -169,7 +168,6 @@ pub fn home<S: AsRef<str>>(username: S) -> Result<Option<PathBuf>, GetHomeError>
 /// Get the home directory of the process' current user.
 ///
 /// There is an example of the usage of this function in the [crate documentation](crate).
-#[inline(always)]
 pub fn my_home() -> Result<Option<PathBuf>, GetHomeError> {
     my_home_imp().map_err(GetHomeError)
 }
@@ -204,42 +202,36 @@ impl UserIdentifier {
 }
 
 impl fmt::Display for GetHomeError {
-    #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         <GetHomeErrorImp as fmt::Display>::fmt(&self.0, f)
     }
 }
 
 impl std::error::Error for GetHomeError {
-    #[inline(always)]
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.0.source()
     }
 }
 
 impl From<GetHomeError> for GetHomeErrorImp {
-    #[inline(always)]
     fn from(value: GetHomeError) -> Self {
         value.0
     }
 }
 
 impl From<GetHomeErrorImp> for GetHomeError {
-    #[inline(always)]
     fn from(value: GetHomeErrorImp) -> Self {
         Self(value)
     }
 }
 
 impl From<UserIdentifier> for UserIdentifierImp {
-    #[inline(always)]
     fn from(value: UserIdentifier) -> Self {
         value.0
     }
 }
 
 impl From<UserIdentifierImp> for UserIdentifier {
-    #[inline(always)]
     fn from(value: UserIdentifierImp) -> Self {
         Self(value)
     }
