@@ -20,8 +20,8 @@ use windows::{
     core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT},
     Win32::{
         Foundation::{
-            CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER,
-            ERROR_NONE_MAPPED, HANDLE, HLOCAL, PSID,
+            CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL,
+            PSID,
         },
         Security::{
             Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW,
@@ -29,9 +29,8 @@ use windows::{
         },
         System::{
             Com::{
-                CoCreateInstance, CoSetProxyBlanket, CoTaskMemFree,
-                CLSCTX_INPROC_SERVER, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL,
-                RPC_C_IMP_LEVEL_IMPERSONATE,
+                CoCreateInstance, CoSetProxyBlanket, CoTaskMemFree, CLSCTX_INPROC_SERVER,
+                EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
             },
             Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE},
             Threading::{GetCurrentProcess, OpenProcessToken},
@@ -45,8 +44,10 @@ use windows::{
 };
 
 #[cfg(feature = "windows-coinitialize")]
-use windows::Win32::{Foundation::CO_E_NOTINITIALIZED, System::Com::{CoInitializeEx, COINIT_MULTITHREADED}};
-
+use windows::Win32::{
+    Foundation::CO_E_NOTINITIALIZED,
+    System::Com::{CoInitializeEx, COINIT_MULTITHREADED},
+};
 
 /// An identifier for a user.
 ///
