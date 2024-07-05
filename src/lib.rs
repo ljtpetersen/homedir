@@ -35,7 +35,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! homedir = "0.3.1"
+//! homedir = "0.3.2"
 //! ```
 //!
 //! # Examples
@@ -71,7 +71,7 @@
 //! # }
 //! ```
 //!
-//! # Upgrading from 0.2.1 to 0.3.1
+//! # Upgrading from 0.2.1 to 0.3.2
 //! There is a major API restructuring in this version. `get_my_home` has been renamed to
 //! [`my_home`] and `get_home` to [`home`]. As well, a cleaner implementation of a cross-platform
 //! API has been written, with inspiration taken from the Rust standard library. The
@@ -99,7 +99,8 @@
 //! with libraries that use `OleInitialize`, which requires `COINIT_APARTMENTTHREADED`.
 //!
 //! To prevent these issues, the feature `windows-coinitialize` can be used. If it is specified,
-//! then the program will no longer try to call `CoInitializeEx`. Thus, in order to use
+//! then the program will call `CoInitializeEx` if `CoCreateInstance` fails. It is specified by
+//! default. If you opt not to use it, in order to call
 //! [`home`], it will be necessary to first call `CoInitializeEx` with whatever parameters are
 //! required, or initialize the other libraries that use it (for example
 //! [`wmi`](https://crates.io/crates/wmi)) first.
