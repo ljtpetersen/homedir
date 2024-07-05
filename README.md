@@ -1,4 +1,11 @@
-# homedir
+# homedir &emsp; [![Build Status]][actions] [![latest version]][crates.io] [![docs passing]][docs.rs]
+
+[Build Status]: https://img.shields.io/github/actions/workflow/status/ljtpetersen/homedir/rust.yml
+[actions]: https://github.com/ljtpetersen/homedir/actions
+[latest version]: https://img.shields.io/crates/v/homedir
+[crates.io]: https://crates.io/crates/homedir
+[docs passing]: https://img.shields.io/docsrs/homedir
+[docs.rs]: https://docs.rs/homedir/latest/homedir/
 
 This crate exists to provide a portable method to getting any user's home
 directory. The API is rather simple: there are two main functions,
