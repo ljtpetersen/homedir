@@ -58,6 +58,6 @@ Feel free to put a copyright header in your name in any files you contribute to.
 Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>.
 
 In version `0.3.0`, the [`wmi-rs`](https://github.com/ohadravid/wmi-rs) crate was referenced when writing the
-`homedir::windows::UserIdentifier::to_owned`
+`homedir::windows::UserIdentifier::to_home`
 function, though there may not be any resemblance now. Nevertheless, I felt it was important to properly credit them, hence I included
 this statement here. The referenced repository is also licensed under APACHE and MIT, which are included in this repository.
