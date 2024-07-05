@@ -20,8 +20,7 @@ use windows::{
     core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT},
     Win32::{
         Foundation::{
-            CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, HANDLE, HLOCAL,
-            PSID,
+            CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, E_OUTOFMEMORY, E_UNEXPECTED, HANDLE, HLOCAL, PSID
         },
         Security::{
             Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW,
@@ -152,13 +151,19 @@ impl UserIdentifier {
                     return Err(e.into());
                 }
             }
+            if sid_size == 0 {
+                return Err(WinError::from(E_UNEXPECTED).into());
+            }
             let layout = Layout::from_size_align(sid_size as usize, align_of::<SID>()).unwrap();
             let sid_buf = alloc_zeroed(layout);
+            if sid_buf.is_null() {
+                return Err(WinError::from(E_OUTOFMEMORY).into());
+            }
             // the domain is unfortunately necessary, otherwise the function will not operate
             // correctly.
             let mut domain = vec![0; domain_size as usize];
             let psid = PSID(sid_buf.cast());
-            LookupAccountNameW(
+            let ret = if let Err(e) = LookupAccountNameW(
                 None,
                 PCWSTR(username.as_ptr()),
                 psid,
@@ -166,8 +171,11 @@ impl UserIdentifier {
                 PWSTR(domain.as_mut_ptr()),
                 &mut domain_size,
                 &mut peuse,
-            )?;
-            let ret = sid_to_string(psid).map(Some);
+            ) {
+                Err(e.into())
+            } else {
+                sid_to_string(psid).map(Some)
+            };
             dealloc(sid_buf, layout);
             ret
         }
@@ -202,21 +210,29 @@ impl UserIdentifier {
                     return Err(e.into());
                 }
             }
+            if buffer_size == 0 {
+                return Err(WinError::from(E_UNEXPECTED).into());
+            }
             let layout =
                 Layout::from_size_align(buffer_size as usize, align_of::<TOKEN_USER>()).unwrap();
             let buf_ptr = alloc_zeroed(layout);
-            if let Err(e) = GetTokenInformation(
+            if buf_ptr.is_null() {
+                CloseHandle(token_handle)?;
+                return Err(WinError::from(E_OUTOFMEMORY).into());
+            }
+            let ret = if let Err(e) = GetTokenInformation(
                 token_handle,
                 TokenUser,
                 Some(buf_ptr.cast()),
                 buffer_size,
                 &mut buffer_size,
             ) {
-                let _ = CloseHandle(token_handle);
-                return Err(e.into());
-            }
-            let ret = sid_to_string((*buf_ptr.cast::<TOKEN_USER>()).User.Sid);
+                Err(e.into())
+            } else {
+                sid_to_string((*buf_ptr.cast::<TOKEN_USER>()).User.Sid)
+            };
             dealloc(buf_ptr, layout);
+            CloseHandle(token_handle)?;
             ret
         }
     }
