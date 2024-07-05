@@ -31,7 +31,7 @@ or adding the following to the dependencies in your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-homedir = "0.3.2"
+homedir = "0.3.3"
 ```
 
 ### Features
