@@ -5,7 +5,7 @@
 
 [package]
 name = "homedir"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 authors = ["James Petersen <m@jamespetersen.ca>"]
 license = "MIT OR Apache-2.0"

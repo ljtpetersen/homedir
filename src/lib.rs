@@ -35,7 +35,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! homedir = "0.3.3"
+//! homedir = "0.3.4"
 //! ```
 //!
 //! # Examples
