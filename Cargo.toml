@@ -20,7 +20,7 @@ categories = ["config", "filesystem"]
 [target.'cfg(unix)'.dependencies]
 # I debated rolling with my own implementation, but it would probably
 # just be a copy of the implementation in here, so I didn't.
-nix = { version = "0.26.2", features = ["user"] }
+nix = { version = "0.29", features = ["user"] }
 
 # Windows Dependencies
 [target.'cfg(windows)'.dependencies]
