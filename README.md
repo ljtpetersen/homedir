@@ -35,7 +35,7 @@ homedir = "0.3.5"
 ```
 
 ### Features
- * `windows-coinitialize` -- This is enabled by default. On Windows, call `CoInitializeEx` if `CoCreateInstance` returns `CO_E_NOTINITIALIZED`.
+ * `windows-coinitialize` — This is enabled by default. On Windows, call `CoInitializeEx` if `CoCreateInstance` returns `CO_E_NOTINITIALIZED`.
  See the "For Windows Users" section of the documentation for details about `CoInitializeEx`.
 
 The full documentation of the crate, including examples, is available on the [docs.rs](https://docs.rs/homedir) page.
