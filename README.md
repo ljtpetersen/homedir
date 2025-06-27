@@ -31,7 +31,7 @@ or adding the following to the dependencies in your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-homedir = "0.3.4"
+homedir = "0.3.5"
 ```
 
 ### Features
@@ -59,7 +59,7 @@ be dual licensed as above, without any additional terms or conditions.
 Feel free to put a copyright header in your name in any files you contribute to.
 
 ## Copyright and Credits
-Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>.
+Copyright (C) 2023-2025 James Petersen <m@jamespetersen.ca>.
 
 In version `0.3.0`, the [`wmi-rs`](https://github.com/ohadravid/wmi-rs) crate was referenced when writing the
 `homedir::windows::UserIdentifier::to_home`

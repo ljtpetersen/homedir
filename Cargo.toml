@@ -1,11 +1,11 @@
 # Cargo.toml
 #
-# Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
+# Copyright (C) 2023-2025 James Petersen <m@jamespetersen.ca>
 # Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
 [package]
 name = "homedir"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 authors = ["James Petersen <m@jamespetersen.ca>"]
 license = "MIT OR Apache-2.0"

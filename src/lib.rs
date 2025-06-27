@@ -1,6 +1,6 @@
 // src/lib.rs
 //
-// Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
+// Copyright (C) 2023-2025 James Petersen <m@jamespetersen.ca>
 // Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
 #![warn(missing_docs)]
@@ -35,7 +35,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! homedir = "0.3.4"
+//! homedir = "0.3.5"
 //! ```
 //!
 //! # Examples

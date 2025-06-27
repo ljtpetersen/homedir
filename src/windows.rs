@@ -1,6 +1,6 @@
 // src/windows.rs
 //
-// Copyright (C) 2023-2024 James Petersen <m@jamespetersen.ca>
+// Copyright (C) 2023-2025 James Petersen <m@jamespetersen.ca>
 // Licensed under Apache 2.0 OR MIT. See LICENSE-APACHE or LICENSE-MIT
 
 use core::fmt;
