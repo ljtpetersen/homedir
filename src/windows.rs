@@ -5,10 +5,7 @@
 
 use core::fmt;
 use std::{
-    alloc::{alloc_zeroed, dealloc, Layout},
-    mem::align_of,
-    path::PathBuf,
-    ptr::null_mut,
+    alloc::{alloc_zeroed, dealloc, Layout}, mem::align_of, ops::Deref, path::PathBuf, ptr::null_mut
 };
 
 use cfg_if::cfg_if;
@@ -17,14 +14,14 @@ use widestring::{
     U16CStr, U16CString, U16Str,
 };
 use windows::{
-    core::{w, Error as WinError, BSTR, PCWSTR, PWSTR, VARIANT},
+    core::{w, Error as WinError, BSTR, PCWSTR, PWSTR},
     Win32::{
         Foundation::{
-            CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, E_OUTOFMEMORY, E_UNEXPECTED, HANDLE, HLOCAL, PSID
+            CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_NONE_MAPPED, E_OUTOFMEMORY, E_UNEXPECTED, HANDLE, HLOCAL
         },
         Security::{
             Authorization::ConvertSidToStringSidW, GetTokenInformation, LookupAccountNameW,
-            TokenUser, SID, SID_NAME_USE, TOKEN_QUERY, TOKEN_USER,
+            TokenUser, SID, SID_NAME_USE, TOKEN_QUERY, TOKEN_USER, PSID
         },
         System::{
             Com::{
@@ -33,6 +30,7 @@ use windows::{
             },
             Rpc::{RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE},
             Threading::{GetCurrentProcess, OpenProcessToken},
+            Variant::VARIANT,
             Wmi::{
                 IWbemLocator, IWbemServices, WbemLocator, WBEM_FLAG_CONNECT_USE_MAX_WAIT,
                 WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE,
@@ -109,17 +107,16 @@ pub fn my_home() -> Result<Option<PathBuf>, GetHomeError> {
 unsafe fn sid_to_string(sid: PSID) -> Result<UserIdentifier, GetHomeError> {
     let mut str_pointer: PWSTR = PWSTR::null();
     // convert the SID to string.
-    ConvertSidToStringSidW(sid, &mut str_pointer)?;
-    let ret = match U16CStr::from_ptr_str(str_pointer.0).to_string() {
+    unsafe { ConvertSidToStringSidW(sid, &mut str_pointer)?; }
+    let ret = match unsafe { U16CStr::from_ptr_str(str_pointer.0).to_string() } {
         Ok(v) => v,
         Err(e) => {
             // we already have an error. I won't check for this one.
-            LocalFree(HLOCAL(str_pointer.0.cast()));
+            unsafe { LocalFree(Some(HLOCAL(str_pointer.0.cast()))); }
             return Err(e.into());
         }
-    }
-    .to_owned();
-    if !LocalFree(HLOCAL(str_pointer.0.cast())).0.is_null() {
+    };
+    if unsafe { !LocalFree(Some(HLOCAL(str_pointer.0.cast()))).0.is_null() } {
         Err(WinError::from_win32())?;
     }
     Ok(UserIdentifier(ret))
@@ -139,9 +136,9 @@ impl UserIdentifier {
             if let Err(e) = LookupAccountNameW(
                 None,
                 PCWSTR(username.as_ptr()),
-                PSID(null_mut()),
+                None,
                 &mut sid_size,
-                PWSTR::null(),
+                None,
                 &mut domain_size,
                 &mut peuse,
             ) {
@@ -166,9 +163,9 @@ impl UserIdentifier {
             let ret = if let Err(e) = LookupAccountNameW(
                 None,
                 PCWSTR(username.as_ptr()),
-                psid,
+                Some(psid),
                 &mut sid_size,
-                PWSTR(domain.as_mut_ptr()),
+                Some(PWSTR(domain.as_mut_ptr())),
                 &mut domain_size,
                 &mut peuse,
             ) {
@@ -197,7 +194,7 @@ impl UserIdentifier {
         unsafe {
             // get the handle of the current process.
             let handle = GetCurrentProcess();
-            let mut token_handle = HANDLE(0);
+            let mut token_handle = HANDLE(null_mut());
             // get a token to query information about the current process. this handle must be dropped
             // manually with CloseHandle, as seen below.
             OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle)?;
@@ -206,7 +203,7 @@ impl UserIdentifier {
             if let Err(e) = GetTokenInformation(token_handle, TokenUser, None, 0, &mut buffer_size)
                 && e != ERROR_INSUFFICIENT_BUFFER.into()
             {
-                let _ = CloseHandle(token_handle);
+                _ = CloseHandle(token_handle);
                 return Err(e.into());
             }
             if buffer_size == 0 {
@@ -309,9 +306,8 @@ impl GetHomeInstance {
             let mut variant = VARIANT::default();
             let mut vt_type = 0;
             ret.Get(name, 0, &mut variant, Some(&mut vt_type), None)?;
-            let bstr = BSTR::try_from(&variant)?;
             Ok(Some(
-                U16Str::from_slice(bstr.as_wide()).to_os_string().into(),
+                U16Str::from_slice(variant.Anonymous.Anonymous.Anonymous.bstrVal.deref().deref()).to_os_string().into(),
             ))
         }
     }
