@@ -204,11 +204,10 @@ impl UserIdentifier {
             let mut buffer_size = 0;
             // get the length of the buffer requried for this query.
             if let Err(e) = GetTokenInformation(token_handle, TokenUser, None, 0, &mut buffer_size)
+                && e != ERROR_INSUFFICIENT_BUFFER.into()
             {
-                if e != ERROR_INSUFFICIENT_BUFFER.into() {
-                    let _ = CloseHandle(token_handle);
-                    return Err(e.into());
-                }
+                let _ = CloseHandle(token_handle);
+                return Err(e.into());
             }
             if buffer_size == 0 {
                 return Err(WinError::from(E_UNEXPECTED).into());
