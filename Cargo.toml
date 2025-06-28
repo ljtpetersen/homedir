@@ -5,7 +5,7 @@
 
 [package]
 name = "homedir"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2024"
 authors = ["James Petersen <m@jamespetersen.ca>"]
 license = "MIT OR Apache-2.0"
@@ -15,6 +15,7 @@ readme = "README.md"
 repository = "https://github.com/ljtpetersen/homedir"
 keywords = ["home", "directory", "utility", "lightweight", "profile"]
 categories = ["config", "filesystem"]
+rust-version = "1.88"
 
 # Unix Dependencies
 [target.'cfg(unix)'.dependencies]
