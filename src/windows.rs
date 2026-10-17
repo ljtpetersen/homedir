@@ -117,7 +117,7 @@ unsafe fn sid_to_string(sid: PSID) -> Result<UserIdentifier, GetHomeError> {
         }
     };
     if unsafe { !LocalFree(Some(HLOCAL(str_pointer.0.cast()))).0.is_null() } {
-        Err(WinError::from_win32())?;
+        Err(WinError::from_thread())?;
     }
     Ok(UserIdentifier(ret))
 }
